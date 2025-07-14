@@ -38,7 +38,7 @@ def get_or_load_model():
         try:
             MODEL = ChatterboxTTS.from_pretrained(DEVICE)
             checkpoint_path = hf_hub_download(repo_id=MODEL_REPO, filename=T3_CHECKPOINT_FILE,
-                                              token="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")
+                                              token="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")
             t3_state = load_file(checkpoint_path, device="cpu")
             MODEL.t3.load_state_dict(t3_state)
 
