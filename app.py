@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Chatterbox-TTS Gradio App with checkpoint loading and performance enhancements"""
+"""Chatterbox-TTS Gradio App with checkpoint loading"""
 
 import sys
 import re
@@ -30,11 +30,6 @@ T3_CHECKPOINT_FILE = "merged_model/t3_cfg.safetensors"
 # Global model initialization
 MODEL = None
 
-def t3_to(model: "ChatterboxTTS", dtype):
-    """Cast t3 and its conds to a specific dtype (e.g., bfloat16)"""
-    model.t3.to(dtype=dtype)
-    model.conds.t3.to(dtype=dtype)
-    return model
 
 def get_or_load_model():
     global MODEL
@@ -42,40 +37,19 @@ def get_or_load_model():
         print("Model not loaded, initializing...")
         try:
             MODEL = ChatterboxTTS.from_pretrained(DEVICE)
-            checkpoint_path = hf_hub_download(
-                repo_id=MODEL_REPO,
-                filename=T3_CHECKPOINT_FILE,
-                token=os.environ["HUGGING_FACE_HUB_TOKEN"]
-            )
-            t3_state = load_file(checkpoint_path, device=DEVICE)
+            checkpoint_path = hf_hub_download(repo_id=MODEL_REPO, filename=T3_CHECKPOINT_FILE,
+                                              token=os.environ["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"])
+            t3_state = load_file(checkpoint_path, device="cpu")
             MODEL.t3.load_state_dict(t3_state)
-
-            # Use bfloat16 if supported
-            if DEVICE == "cuda" and torch.cuda.is_bf16_supported():
-                t3_to(MODEL, torch.bfloat16)
-                logger.info("t3 layers cast to bfloat16")
-            else:
-                logger.warning("bfloat16 not supported, using default dtype")
-
-            # Compile generation step for speedup
-            try:
-                MODEL.t3._step_compilation_target = torch.compile(
-                    MODEL.t3._step_compilation_target,
-                    fullgraph=True,
-                    backend="cudagraphs"
-                )
-                logger.info("torch.compile applied to t3._step_compilation_target")
-            except Exception as compile_error:
-                logger.warning(f"torch.compile failed: {compile_error}")
 
             if hasattr(MODEL, 'to') and str(MODEL.device) != DEVICE:
                 MODEL.to(DEVICE)
-
             print(f"Model loaded successfully. Internal device: {getattr(MODEL, 'device', 'N/A')}")
         except Exception as e:
             print(f"Error loading model: {e}")
             raise
     return MODEL
+
 
 def set_seed(seed: int):
     torch.manual_seed(seed)
@@ -84,6 +58,7 @@ def set_seed(seed: int):
         torch.cuda.manual_seed_all(seed)
     random.seed(seed)
     np.random.seed(seed)
+
 
 def split_text_into_chunks(text: str, max_chars: int = 250) -> list:
     if len(text) <= max_chars:
@@ -132,13 +107,14 @@ def split_text_into_chunks(text: str, max_chars: int = 250) -> list:
 
     return [chunk for chunk in chunks if chunk.strip()]
 
+
 def generate_tts_audio(
-    text_input: str,
-    audio_prompt_path_input: str,
-    exaggeration_input: float,
-    temperature_input: float,
-    seed_num_input: int,
-    cfgw_input: float
+        text_input: str,
+        audio_prompt_path_input: str,
+        exaggeration_input: float,
+        temperature_input: float,
+        seed_num_input: int,
+        cfgw_input: float
 ) -> tuple[int, np.ndarray]:
     try:
         current_model = get_or_load_model()
@@ -148,7 +124,7 @@ def generate_tts_audio(
         if seed_num_input != 0:
             set_seed(int(seed_num_input))
 
-        chunk_size = 400
+        chunk_size = 400  # Hardcoded here
         text_chunks = split_text_into_chunks(text_input, chunk_size)
         logger.info(f"Processing {len(text_chunks)} text chunk(s)")
 
@@ -157,7 +133,7 @@ def generate_tts_audio(
         output_dir.mkdir(exist_ok=True)
 
         for i, chunk in enumerate(text_chunks):
-            logger.info(f"Generating chunk {i+1}/{len(text_chunks)}: '{chunk[:50]}...'")
+            logger.info(f"Generating chunk {i + 1}/{len(text_chunks)}: '{chunk[:50]}...'")
             wav = current_model.generate(
                 chunk,
                 audio_prompt_path=audio_prompt_path_input,
@@ -168,10 +144,10 @@ def generate_tts_audio(
             generated_wavs.append(wav)
 
             if len(text_chunks) > 1:
-                chunk_path = output_dir / f"chunk_{i+1}_{random.randint(1000, 9999)}.wav"
+                chunk_path = output_dir / f"chunk_{i + 1}_{random.randint(1000, 9999)}.wav"
                 import torchaudio
                 torchaudio.save(str(chunk_path), wav, current_model.sr)
-                logger.info(f"Chunk {i+1} saved to: {chunk_path}")
+                logger.info(f"Chunk {i + 1} saved to: {chunk_path}")
 
         if len(generated_wavs) > 1:
             silence_samples = int(0.3 * current_model.sr)
@@ -196,11 +172,12 @@ def generate_tts_audio(
         logger.error(f"Generation failed: {e}")
         raise gr.Error(f"Generation failed: {str(e)}")
 
+
 # Create Gradio interface
 with gr.Blocks(
-    title="Chatterbox-TTS",
-    theme=gr.themes.Soft(),
-    css=""" .gradio-container { max-width: 1200px; margin: auto; } """
+        title="Chatterbox-TTS",
+        theme=gr.themes.Soft(),
+        css=""" .gradio-container { max-width: 1200px; margin: auto; } """
 ) as demo:
     gr.HTML("""
     <div style="text-align: center; padding: 20px;">
@@ -227,12 +204,28 @@ with gr.Blocks(
             )
 
             with gr.Row():
-                exaggeration = gr.Slider(0.25, 2, step=0.05, label="Exaggeration", value=0.5)
-                cfg_weight = gr.Slider(0.2, 1, step=0.05, label="CFG/Pace", value=0.5)
+                exaggeration = gr.Slider(
+                    0.25, 2, step=0.05,
+                    label="Exaggeration",
+                    value=0.5
+                )
+                cfg_weight = gr.Slider(
+                    0.2, 1, step=0.05,
+                    label="CFG/Pace",
+                    value=0.5
+                )
 
             with gr.Accordion("Advanced Options", open=False):
-                seed_num = gr.Number(value=0, label="Random seed (0 for random)", precision=0)
-                temp = gr.Slider(0.05, 5, step=0.05, label="Temperature", value=0.8)
+                seed_num = gr.Number(
+                    value=0,
+                    label="Random seed (0 for random)",
+                    precision=0
+                )
+                temp = gr.Slider(
+                    0.05, 5, step=0.05,
+                    label="Temperature",
+                    value=0.8
+                )
 
             run_btn = gr.Button("Generate Speech", variant="primary", size="lg")
 
@@ -241,7 +234,14 @@ with gr.Blocks(
 
     run_btn.click(
         fn=generate_tts_audio,
-        inputs=[text, ref_wav, exaggeration, temp, seed_num, cfg_weight],
+        inputs=[
+            text,
+            ref_wav,
+            exaggeration,
+            temp,
+            seed_num,
+            cfg_weight,
+        ],
         outputs=[audio_output],
         show_progress=True
     )
@@ -255,6 +255,7 @@ with gr.Blocks(
         label="Example Texts"
     )
 
+
 def main():
     try:
         logger.info("Loading model at startup...")
@@ -265,6 +266,7 @@ def main():
         logger.error(f"Failed to load model on startup: {e}")
         print(f"Application may not function properly. Error: {e}")
         demo.launch(server_name="0.0.0.0", server_port=7860)
+
 
 if __name__ == "__main__":
     main()
