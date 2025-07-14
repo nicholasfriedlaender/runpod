@@ -30,13 +30,15 @@ T3_CHECKPOINT_FILE = "merged_model/t3_cfg.safetensors"
 # Global model initialization
 MODEL = None
 
+
 def get_or_load_model():
     global MODEL
     if MODEL is None:
         print("Model not loaded, initializing...")
         try:
             MODEL = ChatterboxTTS.from_pretrained(DEVICE)
-            checkpoint_path = hf_hub_download(repo_id=MODEL_REPO, filename=T3_CHECKPOINT_FILE, token=os.environ["HUGGING_FACE_HUB_TOKEN"])
+            checkpoint_path = hf_hub_download(repo_id=MODEL_REPO, filename=T3_CHECKPOINT_FILE,
+                                              token=os.environ["HUGGING_FACE_HUB"])
             t3_state = load_file(checkpoint_path, device="cpu")
             MODEL.t3.load_state_dict(t3_state)
 
@@ -48,6 +50,7 @@ def get_or_load_model():
             raise
     return MODEL
 
+
 def set_seed(seed: int):
     torch.manual_seed(seed)
     if DEVICE == "cuda":
@@ -55,6 +58,7 @@ def set_seed(seed: int):
         torch.cuda.manual_seed_all(seed)
     random.seed(seed)
     np.random.seed(seed)
+
 
 def split_text_into_chunks(text: str, max_chars: int = 250) -> list:
     if len(text) <= max_chars:
@@ -103,13 +107,14 @@ def split_text_into_chunks(text: str, max_chars: int = 250) -> list:
 
     return [chunk for chunk in chunks if chunk.strip()]
 
+
 def generate_tts_audio(
-    text_input: str,
-    audio_prompt_path_input: str,
-    exaggeration_input: float,
-    temperature_input: float,
-    seed_num_input: int,
-    cfgw_input: float
+        text_input: str,
+        audio_prompt_path_input: str,
+        exaggeration_input: float,
+        temperature_input: float,
+        seed_num_input: int,
+        cfgw_input: float
 ) -> tuple[int, np.ndarray]:
     try:
         current_model = get_or_load_model()
@@ -128,7 +133,7 @@ def generate_tts_audio(
         output_dir.mkdir(exist_ok=True)
 
         for i, chunk in enumerate(text_chunks):
-            logger.info(f"Generating chunk {i+1}/{len(text_chunks)}: '{chunk[:50]}...'")
+            logger.info(f"Generating chunk {i + 1}/{len(text_chunks)}: '{chunk[:50]}...'")
             wav = current_model.generate(
                 chunk,
                 audio_prompt_path=audio_prompt_path_input,
@@ -139,10 +144,10 @@ def generate_tts_audio(
             generated_wavs.append(wav)
 
             if len(text_chunks) > 1:
-                chunk_path = output_dir / f"chunk_{i+1}_{random.randint(1000, 9999)}.wav"
+                chunk_path = output_dir / f"chunk_{i + 1}_{random.randint(1000, 9999)}.wav"
                 import torchaudio
                 torchaudio.save(str(chunk_path), wav, current_model.sr)
-                logger.info(f"Chunk {i+1} saved to: {chunk_path}")
+                logger.info(f"Chunk {i + 1} saved to: {chunk_path}")
 
         if len(generated_wavs) > 1:
             silence_samples = int(0.3 * current_model.sr)
@@ -167,11 +172,12 @@ def generate_tts_audio(
         logger.error(f"Generation failed: {e}")
         raise gr.Error(f"Generation failed: {str(e)}")
 
-# Create Gradio interface
+# make user autehticate
+
 with gr.Blocks(
-    title="Chatterbox-TTS",
-    theme=gr.themes.Soft(),
-    css=""" .gradio-container { max-width: 1200px; margin: auto; } """
+        title="Chatterbox-TTS",
+        theme=gr.themes.Soft(),
+        css=""" .gradio-container { max-width: 1200px; margin: auto; } """
 ) as demo:
     gr.HTML("""
     <div style="text-align: center; padding: 20px;">
@@ -249,16 +255,18 @@ with gr.Blocks(
         label="Example Texts"
     )
 
+
 def main():
     try:
         logger.info("Loading model at startup...")
         get_or_load_model()
         logger.info("Startup model loading complete!")
-        demo.launch(server_name="0.0.0.0", server_port=7860)
+        demo.launch(server_name="0.0.0.0", server_port=7860, auth=("admin", "mypassword"))
     except Exception as e:
         logger.error(f"Failed to load model on startup: {e}")
         print(f"Application may not function properly. Error: {e}")
-        demo.launch(server_name="0.0.0.0", server_port=7860)
+        demo.launch(server_name="0.0.0.0", server_port=7860, auth=("admin", "mypassword"))
+
 
 if __name__ == "__main__":
     main()
